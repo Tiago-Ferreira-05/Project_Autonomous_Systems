@@ -1,0 +1,18 @@
+# Virtual environment
+ekf_slam_sim_venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Results
+results/
+
+# Plots
+*.png
+
+# Editor/OS
+.vscode/
+.idea/
+.DS_Store
