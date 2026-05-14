@@ -174,7 +174,9 @@ ros2 bag play <bag_folder_name> --loop --rate 1.0
 
 ### Visualization
 ```bash
-rviz2
+ros2 run rqt_image_view rqt_image_view
+```
+```bash
 ros2 run rqt_image_view rqt_image_view
 ```
 > **Fixed Frame:** `odom`
