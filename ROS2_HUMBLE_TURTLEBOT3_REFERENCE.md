@@ -1,6 +1,7 @@
 # TurtleBot3 ROS 2 Humble — Command Reference
 
 > Quick-reference guide for environment setup, robot operations, SLAM execution, and data analysis.
+> Tested on **Ubuntu 22.04** with **ROS 2 Humble Hawksbill** and **TurtleBot3 Waffle Pi**.
 
 ---
 
