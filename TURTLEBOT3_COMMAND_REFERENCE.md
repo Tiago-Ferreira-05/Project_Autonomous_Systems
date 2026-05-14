@@ -12,6 +12,7 @@
 - [3A. Camera Calibration (ArduCam)](#3a-camera-calibration-arducam)
 - [4. Visualization \& Data Monitoring](#4-visualization--data-monitoring)
 - [5. Offline Analysis \& Bag Playback](#5-offline-analysis--bag-playback)
+- [6. General ROS 2 Inspection Commands](#6-general-ros-2-inspection-commands)
 
 ---
 
@@ -32,7 +33,10 @@ sudo apt update
 The `dynamixel-sdk` drives the servo motors. `turtlebot3-msgs` provides the custom ROS 2 message types. `turtlebot3` is the full driver stack. `teleop-twist-keyboard` enables keyboard teleoperation. All four can be installed in sequence.
 
 ```bash
-sudo apt install ros-humble-dynamixel-sdk && sudo apt install ros-humble-turtlebot3-msgs && sudo apt install ros-humble-turtlebot3 && sudo apt install ros-humble-teleop-twist-keyboard
+sudo apt install ros-humble-dynamixel-sdk \
+  && sudo apt install ros-humble-turtlebot3-msgs \
+  && sudo apt install ros-humble-turtlebot3 \
+  && sudo apt install ros-humble-teleop-twist-keyboard
 ```
 
 ### 1.3 Install ArUco and Vision Packages
@@ -40,7 +44,9 @@ sudo apt install ros-humble-dynamixel-sdk && sudo apt install ros-humble-turtleb
 `aruco-opencv` handles fiducial marker detection. `image-transport` and its plugins manage efficient compressed image streaming over ROS 2 topics. All three can be installed in sequence.
 
 ```bash
-sudo apt install ros-humble-aruco-opencv && sudo apt install ros-humble-image-transport && sudo apt install ros-humble-image-transport-plugins
+sudo apt install ros-humble-aruco-opencv \
+  && sudo apt install ros-humble-image-transport \
+  && sudo apt install ros-humble-image-transport-plugins
 ```
 
 ### 1.4 `~/.bashrc` Configuration
@@ -213,14 +219,21 @@ projection_matrix:
 Use this only if the calibration file is not being picked up automatically by the camera node. This publishes the calibration values directly as a `CameraInfo` message to the topic, bypassing the file.
 
 ```bash
-ros2 topic pub /camera_info sensor_msgs/msg/CameraInfo "{header: {frame_id: 'camera_link'}, height: 240, width: 320, distortion_model: 'plumb_bob', d: [-0.036978, 0.008770, -0.041104, 0.012788, 0.000000], k: [245.574224, 0.0, 164.427251, 0.0, 246.335295, 99.800133, 0.0, 0.0, 1.0], r: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], p: [247.309906, 0.0, 168.408758, 0.0, 0.0, 239.618699, 89.403075, 0.0, 0.0, 0.0, 1.0, 0.0]}"
+ros2 topic pub /camera_info sensor_msgs/msg/CameraInfo \
+  "{header: {frame_id: 'camera_link'}, \
+    height: 240, width: 320, \
+    distortion_model: 'plumb_bob', \
+    d: [-0.036978, 0.008770, -0.041104, 0.012788, 0.000000], \
+    k: [245.574224, 0.0, 164.427251, 0.0, 246.335295, 99.800133, 0.0, 0.0, 1.0], \
+    r: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], \
+    p: [247.309906, 0.0, 168.408758, 0.0, 0.0, 239.618699, 89.403075, 0.0, 0.0, 0.0, 1.0, 0.0]}"
 ```
 
 ---
 
 ## 4. Visualization & Data Monitoring
 
-> Run on the **local workstation**. RViz2 and the image viewer are complementary — launch both together to get a complete view of the robot state and the camera feed side by side.
+> Run on the **local workstation**. RViz2 and the image viewer are complementary — launch both together to get a complete picture of the robot state and the camera feed side by side.
 
 ### 4.1 RViz2 — Full State Visualization
 
@@ -234,26 +247,32 @@ rviz2
 
 ### 4.2 Image Viewer — Live Camera Feed
 
-Launches a standalone window showing the raw camera stream. Use it alongside RViz2 to confirm that ArUco markers are visible, well-lit, and being detected correctly.
+Launches a standalone window showing the raw camera stream. Use it alongside RViz2 to confirm that ArUco markers are visible, well-lit, and being detected correctly before recording.
 
 ```bash
 ros2 run rqt_image_view rqt_image_view
 ```
 
-### 4.3 ArUco Detection Stream — Live Echo
+### 4.3 Topic Live Echo
 
-Prints each incoming detection message to the terminal in real time. Use this to verify that marker IDs, estimated ranges, and bearings look physically plausible before committing to a recording.
+Prints all messages arriving on a topic in real time. Useful for verifying that any node is actively publishing and that message content looks physically plausible.
+
+```bash
+ros2 topic echo <topic_name>
+```
+
+For example, to monitor ArUco detections:
 
 ```bash
 ros2 topic echo /aruco_detections
 ```
 
-### 4.4 ArUco Topic Metadata
+### 4.4 Topic Metadata
 
-Displays publisher/subscriber count, message type, and QoS settings for the detections topic. Run this to confirm the tracker node is actively publishing.
+Displays publisher/subscriber count, message type, and QoS settings for any topic. Run this to confirm a node is connected and publishing at the expected rate.
 
 ```bash
-ros2 topic info /aruco_detections
+ros2 topic info <topic_name>
 ```
 
 ---
@@ -270,18 +289,101 @@ Prints a full summary of the recording: duration, total message count, all topic
 ros2 bag info <bag_folder_name>
 ```
 
-### 5.2 Standard Playback
+### 5.2 Bag Playback
 
-Replays the bag at real-time speed, republishing all recorded topics as originally captured. The EKF-SLAM node subscribes to these exactly as it would on a live robot.
+Replays the bag, republishing all recorded topics exactly as captured. The EKF-SLAM node can subscribe to these exactly as it would on a live robot. By default, playback runs once at real-time speed and then stops.
+
+Standard playback — runs once at real speed:
 
 ```bash
 ros2 bag play <bag_folder_name>
 ```
 
-### 5.3 Looped Playback with Rate Control
+The most useful flags are listed below. They can be freely combined.
 
-Replays the bag in a continuous loop at a controlled speed multiplier. Use `--rate 0.5` for half speed when debugging fast sequences, or `--rate 2.0` to sweep through a long recording quickly.
+| Flag | Example | Effect |
+|------|---------|--------|
+| `--rate <factor>` | `--rate 0.5` | Play at half speed. Use `2.0` to fast-forward. Useful for debugging or sweeping long recordings. |
+| `--loop` | `--loop` | Restart from the beginning when the bag ends. Does **not** loop by default. |
+| `--start-offset <sec>` | `--start-offset 30` | Skip the first N seconds of the bag. Useful when the robot was stationary at the start. |
+| `--topics <t1> <t2>` | `--topics /odom /aruco_detections` | Replay only the listed topics, ignoring all others. |
+| `--clock` | `--clock` | Publish a `/clock` topic driven by bag time. Required when nodes use `use_sim_time:=true`. |
+| `--read-ahead-queue-size <n>` | `--read-ahead-queue-size 1000` | Buffer more messages ahead of time. Helps prevent playback gaps on slow disks. |
+
+Example — looped half-speed replay of only the odometry and detection topics:
 
 ```bash
-ros2 bag play <bag_folder_name> --loop --rate 1.0
+ros2 bag play <bag_folder_name> --loop --rate 0.5 --topics /odom /aruco_detections
+```
+
+---
+
+## 6. General ROS 2 Inspection Commands
+
+> Useful at any point during a live session or bag replay to understand what is running and what is being published.
+
+### 6.1 List All Active Topics
+
+Shows every topic currently being published or subscribed to in the ROS 2 network.
+
+```bash
+ros2 topic list
+```
+
+### 6.2 Monitor Topic Publish Rate
+
+Reports the average message frequency (Hz) of a topic over a short sampling window. Use this to verify a sensor is publishing at its expected rate (e.g. camera at ~30 Hz, odometry at ~50 Hz).
+
+```bash
+ros2 topic hz <topic_name>
+```
+
+### 6.3 Inspect Message Type Definition
+
+Prints the full field layout of any ROS 2 message type. Useful when building a subscriber or checking what fields an observation message contains.
+
+```bash
+ros2 interface show <message_type>
+```
+
+For example, to inspect the ArUco detection message structure:
+
+```bash
+ros2 interface show aruco_opencv_msgs/msg/ArucoDetection
+```
+
+### 6.4 List All Active Nodes
+
+Shows every node currently running in the ROS 2 graph.
+
+```bash
+ros2 node list
+```
+
+### 6.5 Inspect a Node
+
+Prints all the topics, services, and parameters a specific node is publishing, subscribing to, or exposing. Useful for tracing where data is coming from or going to.
+
+```bash
+ros2 node info <node_name>
+```
+
+### 6.6 List All Active Services
+
+Shows every service currently available in the ROS 2 network.
+
+```bash
+ros2 service list
+```
+
+### 6.7 Parameter Inspection
+
+Lists all parameters exposed by a running node, or gets the current value of a specific one.
+
+```bash
+ros2 param list <node_name>
+```
+
+```bash
+ros2 param get <node_name> <parameter_name>
 ```
