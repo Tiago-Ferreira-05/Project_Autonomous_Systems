@@ -174,7 +174,7 @@ ros2 bag play <bag_folder_name> --loop --rate 1.0
 
 ### Visualization
 ```bash
-ros2 run rqt_image_view rqt_image_view
+rviz
 ```
 ```bash
 ros2 run rqt_image_view rqt_image_view
