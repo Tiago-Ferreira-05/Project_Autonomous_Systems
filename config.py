@@ -96,8 +96,8 @@ Q = np.diag([
 # Observations outside these limits are discarded by simulate_observations()
 # (simulator) or filtered at the ROS node level (real data).
 
-MAX_RANGE         = 10.0             # metres — beyond this, markers too small
-MAX_BEARING       = np.pi / 2        # radians — ±90° half-FOV  (full 180° FOV)
+MAX_RANGE         = 2.0              # metres — beyond this, markers too small
+MAX_BEARING       = np.deg2rad(22.5)  # radians — ±22.5° half-FOV (total 45°)
 
 # Camera intrinsics (used for real ArUco range estimation from marker size).
 # Not used by the simulator, but kept here for when the ROS node is built.
@@ -132,16 +132,36 @@ MIN_RANGE_SQ = 1e-9               # metres²
 # =============================================================================
 
 # Initial robot pose  [x, y, theta]  in metres and radians.
-# Must match the first waypoint of the predefined path.
-INIT_ROBOT_POSE = np.array([2.0, 2.0, 0.0])
+# Used as the starting pose in both path mode and keyboard mode.
+INIT_ROBOT_POSE = np.array([5.0, 20.0, 0.0], dtype=float)
 
 # Map grid dimensions (cells).  Each cell = 1 metre in the simulator.
 MAP_WIDTH  = 25                   # cells
 MAP_HEIGHT = 25                   # cells
 
-# Number of complete laps the robot makes around the map.
+# Number of complete laps the robot makes around the map (path mode only).
 # More laps → more re-observations → tighter landmark covariances.
 NUM_LAPS = 2
+
+# ---------------------------------------------------------------------------
+# Control mode
+# ---------------------------------------------------------------------------
+# "path"     — robot follows the hardcoded rectangular waypoint path
+#              (default, fully automated, reproducible).
+# "keyboard" — robot is driven interactively via W/A/S/D keys in the live
+#              matplotlib window.  Press Q to finish and run evaluation.
+CONTROL_MODE = "path"    # "path" | "keyboard"
+
+# ---------------------------------------------------------------------------
+# Keyboard control parameters  (used only when CONTROL_MODE = "keyboard")
+# ---------------------------------------------------------------------------
+# KEYBOARD_STEP_M   : forward / backward translation per keypress (metres).
+# KEYBOARD_ROT_DEG  : rotation per A / D keypress (degrees).
+#
+# Smaller steps give finer control but more keypresses per metre travelled.
+# Larger steps feel faster but increase per-step odometry noise accumulation.
+KEYBOARD_STEP_M  = 0.5             # metres per W / S keypress
+KEYBOARD_ROT_DEG = 15.0            # degrees per A / D keypress
 
 
 # =============================================================================
@@ -150,10 +170,13 @@ NUM_LAPS = 2
 
 # Whether to show the live animation during the simulation run.
 # Set to False for batch experiments (much faster, no rendering overhead).
-ANIMATE = True
+# Note: keyboard mode forces ANIMATE = True regardless of this setting,
+# because the figure window is required to capture key events.
+ANIMATE = False
 
 # How many timesteps to skip between animation redraws.
 # 1 = redraw every step (slow), 5 = redraw every 5 steps (smoother).
+# In keyboard mode this is ignored — the plot is redrawn after every keypress.
 ANIMATION_STEP = 3
 
 # Pause time in seconds between animation frames (passed to plt.pause()).

@@ -60,7 +60,7 @@ def ekf_predict(
 
     Algorithm:
         F_x     = [I_3 | 0_{3 x 2N}]            selection matrix  (3 x n)
-        mu_bar  = g(u, mu)                       nonlinear motion model
+        mu_bar  = g(u, mu)                      nonlinear motion model
         G       = I_n + F_x^T G_x F_x           full-state Jacobian  (n x n)
         Sigma_bar = G Sigma G^T + F_x^T R F_x   propagate uncertainty
     """

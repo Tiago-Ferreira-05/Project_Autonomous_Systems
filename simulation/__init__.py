@@ -14,7 +14,7 @@ Typical usage in main_sim.py:
     from simulation import simulate_odometry, simulate_observations
 """
 
-from .enviroment import get_map, build_predefined_path
+from .environment import get_map, build_predefined_path
 from .sensors      import simulate_odometry, simulate_observations
 
 __all__ = [

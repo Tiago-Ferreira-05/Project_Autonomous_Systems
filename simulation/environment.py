@@ -84,10 +84,13 @@ _LANDMARKS_OPT3 = np.array([
     [12.0, 21.0],   # landmark 0 — single landmark (degenerate case)
 ], dtype=float)
 
+_LANDMARK_OPT4 = np.random.uniform(low=1.0, high=24.0, size=(np.random.randint(1, 101), 2))  # custom option with random landmarks
+
 _LANDMARK_OPTIONS = {
     1: _LANDMARKS_OPT1,
     2: _LANDMARKS_OPT2,
     3: _LANDMARKS_OPT3,
+    4: _LANDMARK_OPT4
 }
 
 
@@ -110,7 +113,7 @@ def get_map(option: int) -> tuple:
         landmarks_true : np.ndarray  shape (N, 2)    — true landmark positions
 
     Raises:
-        ValueError if option is not in {1, 2, 3}.
+        ValueError if option is not in {1, 2, 3, 4}.
 
     Example:
         map_grid, landmarks_true = get_map(1)
@@ -123,6 +126,8 @@ def get_map(option: int) -> tuple:
 
     map_grid       = build_map_grid()
     landmarks_true = _LANDMARK_OPTIONS[option].copy()
+    if option == 4:
+        print(f"Custom map option selected: {len(landmarks_true)} random landmarks generated.")
 
     return map_grid, landmarks_true
 
@@ -150,10 +155,10 @@ def build_predefined_path(num_laps: int = 2) -> list:
                The robot starts at path[0] and ends at path[-1].
 
     Path shape (per lap):
-        Segment 1 — right along the bottom  (y = 2,  x: 2 → 16,  theta = 0)
-        Segment 2 — up the right side       (x = 16, y: 3 → 20,  theta = π/2)
-        Segment 3 — left along the top      (y = 20, x: 15 → 5,  theta = π)
-        Segment 4 — down the left side      (x = 5,  y: 19 → 2,  theta = -π/2)
+        Segment 1 — right along the bottom  (x: 2 → 16, y = 2,      theta = 0)
+        Segment 2 — up the right side       (x = 16,    y: 3 → 20,  theta = π/2)
+        Segment 3 — left along the top      (x: 15 → 5, y = 20,     theta = π)
+        Segment 4 — down the left side      (x = 5,     y: 19 → 2,  theta = -π/2)
 
     Note:
         The heading theta is set to the direction of travel along each segment,
