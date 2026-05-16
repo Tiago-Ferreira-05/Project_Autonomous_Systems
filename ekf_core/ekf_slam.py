@@ -20,6 +20,14 @@ Control input:
 
 Observations:
     List of (landmark_id, z) where z = [r, phi]  (range, bearing)
+
+Changelog (Week 4 — real data):
+    [FIX] ekf_update() now applies a Mahalanobis chi-squared gate before
+          every Kalman update.  The threshold is passed in by the caller
+          via the 'mahal_threshold' argument (default 9.21, chi2(2, 0.99)).
+          Bad ArUco detections that would otherwise corrupt the map are
+          rejected before they reach the state update.
+          cfg.MAHALANOBIS_THRESHOLD was already defined — it is now used.
 """
 
 import numpy as np
@@ -29,7 +37,7 @@ from .meas_model   import measurement_model, compute_H, normalize_angle
 
 
 # =============================================================================
-# PREDICTION STEP
+# PREDICTION STEP  — unchanged
 # =============================================================================
 
 def ekf_predict(
@@ -52,43 +60,25 @@ def ekf_predict(
         Sigma : State covariance   shape (n, n)
         u     : Odometry control   (prev_odom, curr_odom)
         R     : Motion noise covariance  shape (3, 3)
-                (models uncertainty injected by the motion model at each step)
 
     Returns:
         mu_bar    : Predicted state vector        shape (n,)
         Sigma_bar : Predicted state covariance    shape (n, n)
-
-    Algorithm:
-        F_x     = [I_3 | 0_{3 x 2N}]            selection matrix  (3 x n)
-        mu_bar  = g(u, mu)                      nonlinear motion model
-        G       = I_n + F_x^T G_x F_x           full-state Jacobian  (n x n)
-        Sigma_bar = G Sigma G^T + F_x^T R F_x   propagate uncertainty
     """
     n = len(mu)
 
-    # --- Selection matrix: picks the robot-pose block out of the full state ---
-    # F_x shape: (3, n).  F_x @ v  extracts [v[0], v[1], v[2]].
-    F_x          = np.zeros((3, n))
+    F_x           = np.zeros((3, n))
     F_x[0:3, 0:3] = np.eye(3)
 
-    # --- Apply nonlinear motion model to robot pose only ---
-    # motion_model() updates mu[0:3] and leaves landmark entries unchanged.
-    mu_bar = motion_model(mu, u)
-
-    # --- Full-state Jacobian G (n x n) ---
-    # compute_G() returns the (n x n) matrix embedding the 3x3 G_x Jacobian.
-    G = compute_G(mu, u)
-
-    # --- Propagate covariance ---
-    # G Sigma G^T : how previous uncertainty is transformed by the motion.
-    # F_x^T R F_x : new uncertainty injected by the motion model noise.
+    mu_bar    = motion_model(mu, u)
+    G         = compute_G(mu, u)
     Sigma_bar = G @ Sigma @ G.T + F_x.T @ R @ F_x
 
     return mu_bar, Sigma_bar
 
 
 # =============================================================================
-# LANDMARK INITIALISATION
+# LANDMARK INITIALISATION  — unchanged
 # =============================================================================
 
 def initialise_landmark(
@@ -108,9 +98,6 @@ def initialise_landmark(
     covariance is propagated from both the robot-pose uncertainty and the
     measurement noise via the Jacobians of the inverse measurement function.
 
-    Reference: Probabilistic Robotics Section 10.2 — EKF SLAM with unknown
-               correspondences; blueprint Section 1.8.
-
     Args:
         mu          : Full state vector before insertion  shape (n,)
         Sigma       : State covariance before insertion   shape (n, n)
@@ -120,9 +107,9 @@ def initialise_landmark(
         landmark_map: Dict {lm_id -> start_index_in_mu}  — modified in place
 
     Returns:
-        mu_new          : Expanded state vector    shape (n+2,)
-        Sigma_new       : Expanded covariance      shape (n+2, n+2)
-        landmark_map    : Updated dict with entry for lm_id
+        mu_new       : Expanded state vector    shape (n+2,)
+        Sigma_new    : Expanded covariance      shape (n+2, n+2)
+        landmark_map : Updated dict with entry for lm_id
 
     Inverse measurement model:
         l_x = x + r * cos(theta + phi)
@@ -140,62 +127,54 @@ def initialise_landmark(
     Initial landmark covariance:
         Sigma_ll = G_x @ Sigma_rr @ G_x^T + G_z @ Q @ G_z^T
 
-    Cross-covariances (robot ↔ new landmark):
-        Sigma_rL_new = Sigma_rr @ G_x^T
-        Sigma_Lr_new = G_x @ Sigma_rr
+    Cross-covariances (robot <-> new landmark):
+        Sigma_rL = Sigma_rr @ G_x^T
     """
-    r, phi        = z[0], z[1]
-    x, y, theta   = mu[0], mu[1], mu[2]
-    n_old         = len(mu)
+    r, phi      = z[0], z[1]
+    x, y, theta = mu[0], mu[1], mu[2]
+    n_old       = len(mu)
 
-    # --- Inverse measurement model: estimate landmark global position ---
+    # Inverse measurement model: estimate landmark global position
     lx = x + r * np.cos(theta + phi)
     ly = y + r * np.sin(theta + phi)
 
-    # --- Expand state vector ---
-    mu_new    = np.append(mu, [lx, ly])   # shape (n_old + 2,)
-    n_new     = len(mu_new)
-    j         = n_old                     # start index of new landmark in mu
+    # Expand state vector
+    mu_new = np.append(mu, [lx, ly])
+    n_new  = len(mu_new)
+    j      = n_old
 
-    # Record the mapping landmark_id -> index in mu
     landmark_map[lm_id] = j
 
-    # --- Expand covariance matrix ---
-    # Copy the old block into the top-left of the new (n+2 x n+2) matrix.
+    # Expand covariance matrix — copy existing block into top-left
     Sigma_new                   = np.zeros((n_new, n_new))
     Sigma_new[0:n_old, 0:n_old] = Sigma
 
-    # --- Jacobian of inverse measurement w.r.t. robot pose (2 x 3) ---
+    # Jacobian of inverse measurement w.r.t. robot pose (2 x 3)
     G_x = np.array([
         [1.0,  0.0,  -r * np.sin(theta + phi)],
         [0.0,  1.0,   r * np.cos(theta + phi)],
     ])
 
-    # --- Jacobian of inverse measurement w.r.t. measurement [r, phi] (2 x 2) ---
+    # Jacobian of inverse measurement w.r.t. measurement [r, phi] (2 x 2)
     G_z = np.array([
         [np.cos(theta + phi),  -r * np.sin(theta + phi)],
         [np.sin(theta + phi),   r * np.cos(theta + phi)],
     ])
 
-    # --- Initial landmark self-covariance ---
-    # Propagates robot-pose uncertainty and measurement noise into landmark.
+    # Initial landmark self-covariance
     Sigma_rr = Sigma[0:3, 0:3]
-    Sigma_ll  = G_x @ Sigma_rr @ G_x.T + G_z @ Q @ G_z.T
-
+    Sigma_ll = G_x @ Sigma_rr @ G_x.T + G_z @ Q @ G_z.T
     Sigma_new[j: j + 2, j: j + 2] = Sigma_ll
 
-    # --- Cross-covariance: robot pose ↔ new landmark ---
-    # Derived from the Jacobian of the inverse measurement model.
-    Sigma_rL = Sigma_rr @ G_x.T              # shape (3, 2)
-    Sigma_new[0:3,    j: j + 2] = Sigma_rL
-    Sigma_new[j: j+2, 0:3     ] = Sigma_rL.T
+    # Cross-covariance: robot pose <-> new landmark
+    Sigma_rL = Sigma_rr @ G_x.T
+    Sigma_new[0:3,   j: j + 2] = Sigma_rL
+    Sigma_new[j:j+2, 0:3     ] = Sigma_rL.T
 
-    # --- Cross-covariance: existing landmarks ↔ new landmark ---
-    # Sigma_LL_new = Sigma_Lr_old @ G_x^T  (off-diagonal blocks, row: old lms)
+    # Cross-covariance: existing landmarks <-> new landmark
     if n_old > 3:
-        Sigma_old_lm_r = Sigma[3:n_old, 0:3]          # old landmarks vs robot
-        Sigma_old_lm_new = Sigma_old_lm_r @ G_x.T     # old landmarks vs new lm
-
+        Sigma_old_lm_r   = Sigma[3:n_old, 0:3]
+        Sigma_old_lm_new = Sigma_old_lm_r @ G_x.T
         Sigma_new[3:n_old, j: j + 2] = Sigma_old_lm_new
         Sigma_new[j: j+2,  3:n_old ] = Sigma_old_lm_new.T
 
@@ -207,62 +186,63 @@ def initialise_landmark(
 # =============================================================================
 
 def ekf_update(
-    mu_bar      : np.ndarray,
-    Sigma_bar   : np.ndarray,
-    observations: list,
-    landmark_map: dict,
-    Q           : np.ndarray,
+    mu_bar         : np.ndarray,
+    Sigma_bar      : np.ndarray,
+    observations   : list,
+    landmark_map   : dict,
+    Q              : np.ndarray,
+    mahal_threshold: float = 9.21,
 ) -> tuple:
     """
     EKF SLAM correction step — Probabilistic Robotics Table 10.2, lines 4-19.
 
-    For each observation, the filter:
-      1. Initialises the landmark if seen for the first time.
+    For each observation the filter:
+      1. Initialises the landmark if seen for the first time (skips update).
       2. Predicts what the sensor should have seen  (h(mu_bar)).
-      3. Computes the innovation  (z - h(mu_bar))  with bearing normalisation.
-      4. Applies the Kalman update to mu and Sigma.
-
-    All observations are processed sequentially; mu and Sigma are updated
-    incrementally after each one (sequential update, equivalent to batch when
-    observations are independent given the state).
+      3. Computes the innovation  (z - h(mu_bar)) with bearing normalisation.
+      4. [FIX] Gates the observation with a Mahalanobis chi-squared test.
+      5. Applies the Kalman update to mu and Sigma if the gate passes.
 
     Args:
-        mu_bar      : Predicted state vector from ekf_predict()   shape (n,)
-        Sigma_bar   : Predicted covariance from ekf_predict()     shape (n, n)
-        observations: List of (landmark_id, z)  where z = [r, phi]
-        landmark_map: Dict {lm_id -> start_index_in_mu}
-        Q           : Measurement noise covariance  shape (2, 2)
+        mu_bar         : Predicted state vector from ekf_predict()   shape (n,)
+        Sigma_bar      : Predicted covariance from ekf_predict()     shape (n, n)
+        observations   : List of (landmark_id, z)  where z = [r, phi]
+        landmark_map   : Dict {lm_id -> start_index_in_mu}
+        Q              : Measurement noise covariance  shape (2, 2)
+        mahal_threshold: Chi-squared gate threshold.
+                         Default 9.21 = chi2(2, 0.99) — rejects the worst 1%
+                         of observations under a Gaussian noise model.
+                         Pass cfg.MAHALANOBIS_THRESHOLD from the caller.
 
     Returns:
         mu          : Corrected state vector    shape (n,)   (may be larger
         Sigma       : Corrected covariance      shape (n, n)  if new landmarks
-        landmark_map: Updated landmark mapping             were initialised)
+        landmark_map: Updated landmark mapping              were initialised)
 
     Kalman update equations (per observation):
-        z_hat          = h(mu_bar, j)                   predicted observation
-        H              = compute_H(mu_bar, j, n)         Jacobian
-        S              = H @ Sigma_bar @ H.T + Q         innovation covariance
-        K              = Sigma_bar @ H.T @ inv(S)        Kalman gain
-        innovation     = z - z_hat                       (bearing normalised!)
-        mu_bar         = mu_bar + K @ innovation
-        Sigma_bar      = (I - K @ H) @ Sigma_bar
+        z_hat    = h(mu, j)                      predicted observation
+        H        = compute_H(mu, j, n)           Jacobian  (2 x n)
+        S        = H Sigma H^T + Q               innovation covariance  (2 x 2)
+        innov    = z - z_hat                     innovation (bearing normalised)
+        d_mah^2  = innov^T S^{-1} innov          Mahalanobis distance squared
+        K        = Sigma H^T S^{-1}              Kalman gain
+        mu       = mu + K innov
+        Sigma    = (I - K H) Sigma
     """
-    # Work on mutable copies so we can update in-place across observations
     mu    = mu_bar.copy()
     Sigma = Sigma_bar.copy()
 
     for (lm_id, z) in observations:
 
         # -----------------------------------------------------------------
-        # 1. Initialise landmark if seen for the first time
+        # 1. Initialise landmark if seen for the first time.
+        #    The landmark position is set directly from this observation
+        #    so the innovation would be near-zero — skip the update.
         # -----------------------------------------------------------------
         if lm_id not in landmark_map:
             mu, Sigma, landmark_map = initialise_landmark(
                 mu, Sigma, lm_id, z, Q, landmark_map
             )
-            # After initialisation the landmark is in the state but has high
-            # uncertainty — we skip the update for this observation so we
-            # don't immediately over-correct with poor geometry.
             continue
 
         # -----------------------------------------------------------------
@@ -287,32 +267,52 @@ def ekf_update(
         S = H @ Sigma @ H.T + Q
 
         # -----------------------------------------------------------------
-        # 6. Kalman gain  K = Sigma H^T S^{-1}
-        # -----------------------------------------------------------------
-        K = Sigma @ H.T @ np.linalg.inv(S)
-
-        # -----------------------------------------------------------------
-        # 7. Innovation  (z - z_hat) with bearing normalisation
-        #    CRITICAL: the bearing component must be wrapped to [-pi, pi]
-        #    to avoid jumps at the ±pi boundary causing filter divergence.
+        # 6. Innovation  (z - z_hat) with bearing normalisation
+        #    CRITICAL: bearing must be wrapped to [-pi, pi] to prevent
+        #    filter divergence at the ±pi boundary.
         # -----------------------------------------------------------------
         z      = np.asarray(z, dtype=float)
         innov  = z - z_hat
         innov[1] = normalize_angle(innov[1])
 
         # -----------------------------------------------------------------
-        # 8. State update
+        # 7. [FIX] Mahalanobis chi-squared gate
+        #
+        #    Computes the normalised distance between the actual and
+        #    predicted observation.  Under correct Gaussian assumptions
+        #    this follows a chi-squared distribution with 2 DOF.
+        #
+        #    Gate: innov^T @ S^{-1} @ innov  >  mahal_threshold
+        #
+        #    chi2(2, 0.99) = 9.21  →  rejects the worst 1% of observations.
+        #    Observations that fail the gate are outliers — bad ArUco
+        #    detections, partial occlusions, or data-association errors.
+        #    Letting them through would corrupt the map irreversibly.
         # -----------------------------------------------------------------
-        mu = mu + K @ innov
+        try:
+            S_inv = np.linalg.inv(S)
+        except np.linalg.LinAlgError:
+            # S is singular — degenerate measurement geometry, skip.
+            continue
 
-        # Keep robot heading normalised after the update
+        mahal_sq = float(innov.T @ S_inv @ innov)
+
+        if mahal_sq > mahal_threshold:
+            continue   # outlier — discard, do not update state or covariance
+
+        # -----------------------------------------------------------------
+        # 8. Kalman gain  K = Sigma H^T S^{-1}
+        # -----------------------------------------------------------------
+        K = Sigma @ H.T @ S_inv
+
+        # -----------------------------------------------------------------
+        # 9. State update
+        # -----------------------------------------------------------------
+        mu    = mu + K @ innov
         mu[2] = normalize_angle(mu[2])
 
         # -----------------------------------------------------------------
-        # 9. Covariance update  Sigma = (I - K H) Sigma
-        #    Note: the Joseph form  (I-KH) Sigma (I-KH)^T + K Q K^T
-        #    is numerically more stable and guarantees symmetry; consider
-        #    switching to it if you observe Sigma becoming non-PSD.
+        # 10. Covariance update  Sigma = (I - K H) Sigma
         # -----------------------------------------------------------------
         I_n   = np.eye(n)
         Sigma = (I_n - K @ H) @ Sigma
