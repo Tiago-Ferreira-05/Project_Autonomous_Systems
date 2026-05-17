@@ -254,3 +254,29 @@ def measurement_update(mu, sigma, zs):
         rx, ry, theta = mu[0], mu[1], mu[2]
 
     return mu, sigma
+
+
+def compute_R(u: tuple, mu: np.ndarray) -> np.ndarray:
+    delta_rot1, delta_trans, delta_rot2 = _odometry_primitives(u)
+    theta = mu[2]
+
+    alpha1 = 2.25e-04
+    alpha2 = 1.06e-03
+    alpha3 = 3.81e-04
+    alpha4 = 8.51e-09
+
+    V = np.array([
+        [-delta_trans * np.sin(theta + delta_rot1),  np.cos(theta + delta_rot1),  0],
+        [ delta_trans * np.cos(theta + delta_rot1),  np.sin(theta + delta_rot1),  0],
+        [1,                                           0,                           1]
+    ])
+
+    Mt = np.diag([
+        (alpha1 * delta_rot1  + alpha2 * delta_trans) ** 2,
+        (alpha3 * delta_trans + alpha4 * (delta_rot1 + delta_rot2)) ** 2,
+        (alpha1 * delta_rot2  + alpha2 * delta_trans) ** 2
+    ])
+
+    R = V @ Mt @ V.T
+
+    return R
